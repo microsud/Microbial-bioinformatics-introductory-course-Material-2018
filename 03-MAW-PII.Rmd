@@ -10,9 +10,9 @@ site: bookdown::bookdown_site
 
 Alpha diversity measures are used to identify within individual taxa richness and evenness. The commonly used metrics/indices are Shannon, Inverse Simpson, Simpson, Gini, Observed and Chao1. These indices do not take into account the phylogeny of the taxa identified in sequencing. Phylogenetic diversity (Faith's PD) uses phylogenetic distance to calculate the diversity of a given sample.   
 
-*It is important to note that, alpha diversity indices are sensitive to noise that is inherent to application of polymerase chain reaction and the  sequencing errors.*  
+*It is important to note that, alpha diversity indices are sensitive to noise that is inherent to application of polymerase chain reaction and the sequencing errors.*  
 
-One has to consider the sequencing depth (how much of the taxa have been sampled) for each sample. If there is a large difference, then it is important to normalize the samples to equal sampling depth. First we look at the sampling depth (no. of reads per sample).     
+One has to consider the sequencing depth (how much of the taxa have been sampled) for each sample. If there is a large difference, then it is important to normalize the samples to equal sampling depth. First, we look at the sampling depth (no. of reads per sample).     
 
 **Load packages**  
  
@@ -36,7 +36,7 @@ We will use the filtered phyloseq object from **Set-up and Pre-processing** sect
 
 ```{r}
 
-ps1 <- readRDS("./phyobjects/ps1.rds")
+ps1 <- readRDS("./phyobjects/ps.ng.tax.rds")
 
 # use print option to see the data saved as phyloseq object.
 
@@ -51,31 +51,33 @@ summary(sample_sums(ps1))
 
 ```
 
-As is evident there is a large difference in the number of reads. Minimum is 1286 and maximum is 41694!! There is a ~30X difference!  
+As is evident there is a large difference in the number of reads. Minimum is 2458 and maximum is 115023!! There is a ~47X difference!  
 
-We can plot the rarefaction curve for the observed OTUs in the entire data set.  
+We can plot the rarefaction curve for the observed ASVs in the entire data set. This is a way to check how has the richness captured in the sequencing effort.   
 
 ```{r}
 
-out_tab <- t(abundances(ps1))
-p <- vegan::rarecurve(out_tab, 
+otu_tab <- t(abundances(ps1))
+p <- vegan::rarecurve(otu_tab, 
                       step = 50, label = FALSE, 
-                      sample = min(rowSums(out_tab), 
+                      sample = min(rowSums(otu_tab), 
                                    col = "blue", cex = 0.6))
 
 ```
 
-Not all samples are reaching a plateau and that few samples have high number of reads and high number of OTUs.  
+Almost all samples are reaching a plateau and few samples have high number of reads and high number of ASVs.  
 Since we are comparing different body sites, some are expected to have low bacterial load.  
-We will normalize to the lowest depth of at least 2000 reads to keep maximum samples for our anlaysis. This can be varied to remove samples with lower sequencing depth. This decision will depend on the research question being addressed.  
+We will normalize to the lowest depth of at least 2458 reads to keep maximum samples for our anlaysis. This can be varied to remove samples with lower sequencing depth. This decision will depend on the research question being addressed.  
+
+Note: At the end of this section, we look at relationship between reads per samples and diversity metrics. 
 
 ## Equal sample sums  
 
 ```{r}
 
-set.seed(9242)  # This will help in reprodcuing the filtering and nomalisation. 
+set.seed(9242)  # This will help in reproducing the filtering and nomalisation. 
 
-ps0.rar <- rarefy_even_depth(ps1, sample.size = 2000)
+ps0.rar <- rarefy_even_depth(ps1, sample.size = 2458)
 
 saveRDS(ps0.rar, "./phyobjects/ps0.rar.rds")
 
@@ -92,6 +94,7 @@ print(ps0.rar)
 
 ```
 
+The plot below is only for a quick and dirty check for reads per samples.   
 
 ```{r}
 
@@ -101,6 +104,7 @@ barplot(sample_sums(ps0.rar), las =2)
 
 ```
 
+Quick check taxa prevalence.  
 
 ```{r}
 # quick check taxa prevalence
@@ -125,7 +129,7 @@ Let us calculate diversity.
 
 ```{r}
 
-hmp.div <- diversities(ps0.rar, index = "all")
+hmp.div <- alpha(ps0.rar, index = "all")
 
 datatable(hmp.div)
 
@@ -150,9 +154,15 @@ div.df <- merge(hmp.div,hmp.meta, by = "sam_name")
 colnames(div.df)
 
 # Now use this data frame to plot 
-p <- ggboxplot(div.df, x = "scientific_name", y = "shannon",
-              fill = "scientific_name", palette = "jco")
-p + rotate_x_text()
+p <- ggboxplot(div.df, 
+               x = "scientific_name", 
+               y = "diversity_shannon",
+              fill = "scientific_name", 
+              palette = "jco")
+
+p <- p + rotate_x_text()
+
+print(p)
 
 colnames(hmp.div)
 ```
@@ -162,11 +172,11 @@ Alternative way
 
 ```{r}
 
-# convert phyloseq object into a long data format.  
+# convert phyloseq object into a long data format.
 
-div.df2 <- div.df[,c("scientific_name", "inverse_simpson", "gini_simpson", "shannon", "fisher", "coverage")]
+div.df2 <- div.df[, c("scientific_name", "diversity_inverse_simpson", "diversity_gini_simpson", "diversity_shannon", "diversity_fisher", "diversity_coverage")]
 
-# the names are not pretty. we can replace them 
+# the names are not pretty. we can replace them
 
 colnames(div.df2) <- c("Location", "Inverse Simpson", "Gini-Simpson", "Shannon", "Fisher", "Coverage")
 
@@ -176,7 +186,6 @@ colnames(div.df2)
 div_df_melt <- reshape2::melt(div.df2)
 
 head(div_df_melt)
-
 ```
 
 The diversity indices are stored under column named *variable*.  
@@ -206,14 +215,21 @@ ggsave("./figures/Diversities.pdf", height = 4, width = 10)
 lev <- levels(div_df_melt$Location) # get the variables
 
 # make a pairwise list that we want to compare.
-L.pairs <- combn(seq_along(lev), 2, simplify = FALSE, FUN = function(i)lev[i])
+L.pairs <- combn(seq_along(lev), 2, simplify = FALSE, FUN = function(i) lev[i])
 
-pval <- list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1), symbols = c("****", "***", "**", "*", "n.s")) 
+pval <- list(
+  cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+  symbols = c("****", "***", "**", "*", "n.s")
+)
 
-p2 <- p + stat_compare_means(comparisons = L.pairs, 
-                             label = "p.signif", 
-                             symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1), 
-                                                symbols = c("****", "***", "**", "*", "n.s")))
+p2 <- p + stat_compare_means(
+  comparisons = L.pairs,
+  label = "p.signif",
+  symnum.args = list(
+    cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+    symbols = c("****", "***", "**", "*", "n.s")
+  )
+)
 
 print(p2)
 ```
@@ -226,7 +242,7 @@ Phylogenetic diversity is calculated using the `picante` package.
 
 library(picante)
 
-ps0.rar.otutab <- as.data.frame(ps0.rar@otu_table)
+ps0.rar.asvtab <- as.data.frame(ps0.rar@otu_table)
 
 ps0.rar.tree <- ps0.rar@phy_tree
 
@@ -236,7 +252,7 @@ ps0.rar.tree <- ps0.rar@phy_tree
 
 ps0.rar@phy_tree
 # it is a rooted tree
-df.pd <- pd(t(ps0.rar.otutab), ps0.rar.tree,include.root=T) # t(ou_table) transposes the table for use in picante and the tre file comes from the first code chunck we used to read tree file (see making a phyloseq object section).
+df.pd <- pd(t(ps0.rar.asvtab), ps0.rar.tree,include.root=T) # t(ou_table) transposes the table for use in picante and the tre file comes from the first code chunck we used to read tree file (see making a phyloseq object section).
 
 
 datatable(df.pd)
@@ -258,62 +274,75 @@ hmp.meta$Phylogenetic_Diversity <- df.pd$PD
 
 ```{r}
 
-pd.plot <- ggboxplot(hmp.meta, x = "scientific_name", 
-                     y = "Phylogenetic_Diversity",
-                     fill = "scientific_name", 
-                     palette = "jco",
-                     ylab = "Phylogenetic Diversity", 
-                     xlab = "Body site",
-                     legend = "right")
+pd.plot <- ggboxplot(hmp.meta,
+  x = "scientific_name",
+  y = "Phylogenetic_Diversity",
+  fill = "scientific_name",
+  palette = "jco",
+  ylab = "Phylogenetic Diversity",
+  xlab = "Body site",
+  legend = "right"
+)
 pd.plot <- pd.plot + rotate_x_text()
 
-pd.plot + stat_compare_means(comparisons = L.pairs, 
-                             label = "p.signif", 
-                             symnum.args = list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1), 
-                                                symbols = c("****", "***", "**", "*", "n.s")))
-
+pd.plot + stat_compare_means(
+  comparisons = L.pairs,
+  label = "p.signif",
+  symnum.args = list(
+    cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+    symbols = c("****", "***", "**", "*", "n.s")
+  )
+)
 ```
 
 **NOTE:**  
 
 There are arguments both for and against the use of rarefying to equal library size.  
-The application of normalization method will depend on the type of research question. It is always good to check if there is a correlation between increasing library sizes and richness. Observed OTUs and Phylogenetic diversity can be affected by library sizes. It is always good to check for this before making a choice.    
+The application of normalization method will depend on the type of research question. It is always good to check if there is a correlation between increasing library sizes and richness. Observed ASVs and Phylogenetic diversity can be affected by library sizes. It is always good to check for this before making a choice.    
 
 ```{r}
 
-lib.div <- diversities(ps1, index = "all")
+lib.div <- alpha(ps1, index = "all")
 
 lib.div2 <- richness(ps1)
 
 
-# let us add library size
-lib.div$LibrarySize <- sample_sums(ps1)
+# let us add nmber of total reads/samples
+lib.div$ReadsPerSample <- sample_sums(ps1)
 
-lib.div$Richness <- lib.div2$`0`
+lib.div$Observed <- lib.div2$observed
 
 colnames(lib.div)
 
-ggscatter(lib.div, "LibrarySize", 
-          "shannon") + 
+```
+
+We will use `ggscatter` function from `ggpubr` package to visualze. 
+
+```{r}
+
+p1 <- ggscatter(lib.div, "diversity_shannon", "ReadsPerSample") +
   stat_cor(method = "pearson")
 
-ggscatter(lib.div, "inverse_simpson", "LibrarySize",
-          add = "loess") + 
+p2 <- ggscatter(lib.div, "diversity_inverse_simpson", "ReadsPerSample",
+  add = "loess"
+) +
   stat_cor(method = "pearson")
 
-ggscatter(lib.div, "Richness", "LibrarySize",
-          add = "loess") + 
-  stat_cor(method = "pearson", 
-           label.x = 100, 
-           label.y = 50000)
+p3 <- ggscatter(lib.div, "Observed", "ReadsPerSample",
+  add = "loess") +
+  stat_cor(
+    method = "pearson",
+    label.x = 100,
+    label.y = 50000
+  )
 
+ggarrange(p1, p2, p3, ncol = 2, nrow = 2)
 ```
 
 
 ```{r}
 
 sessionInfo()
-
 
 ```
 
